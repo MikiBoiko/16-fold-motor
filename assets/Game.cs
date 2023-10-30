@@ -278,6 +278,6 @@ public class NoCardFoundException : Exception { }
 public class CardNotHiddenException : Exception { }
 public class PositionOccupiedException : Exception { }
 public class OutOfBoardPositionException : Exception { }
-public class CardNotCloseToWinningException : Exception { }
+public class CardNotCloseToWinningException : Exception { } // TODO : probably refactor
 #endregion
 

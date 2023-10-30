@@ -12,7 +12,7 @@ public class Board
 	private Deck? _deck;
 
 	// count for the cards
-	private int[] _playerCardStackCount = new int[2];
+	public int[] PlayerCardStackCount { private set; get; } = new int[2];
 	// map of the cards in the game where the key is letter(x) + y, BoardPosition format
 	private Dictionary<BoardPosition, CardStack> _cards = new Dictionary<BoardPosition, CardStack>();
 
@@ -55,7 +55,7 @@ public class Board
 	private void SetUpPlayer(Player player, BoardPosition[] positions, List<int> initialValues, ref Random random)
 	{
 		// set player card stack count
-		_playerCardStackCount[(int)player.color] = PLAYER_STARTING_CARDS_COUNT;
+		PlayerCardStackCount[(int)player.color] = PLAYER_STARTING_CARDS_COUNT;
 
 		// instantiate players
 		List<CardStack> playerCards = new List<CardStack>();
@@ -83,222 +83,36 @@ public class Board
 		}
 	}
 
-	// Moves a card stack from one tile to another
-	// TODO : REFACTOR INTO ACTIONS
-	public ActionResolution Move(BoardPosition from, BoardPosition to)
+	public bool IsInbound(BoardPosition at) => at.x >= 0 && at.x < SIZE_X && at.y >= 0 && at.y < SIZE_Y;
+
+	public bool IsOccupied(BoardPosition at) => _cards.ContainsKey(at);
+
+	public CardStack FindCardStack(BoardPosition at)
 	{
-		if (!IsInbound(to))
-			throw new OutOfBoardPositionException();
-
-		if (_cards.Keys.Contains(to))
-			throw new PositionOccupiedException();
-
-		CardStack stack = FindCardStack(from);
-
-		_cards.Remove(from);
-		_cards.Add(to, stack);
-
-		return new ActionResolution
-		{
-			Color = stack.OwnerColor,
-			AllResponse = new ActionResponse
-			{
-				Type = "Move",
-				Data = new Dictionary<string, object?> {
-					{ "from", from.ToString() },
-					{ "to", to.ToString() }
-				}
-			}
-		};
-	}
-
-	// checks if the card in a position winned
-	public ActionResolution Passing(CardColor playerColor, BoardPosition position)
-	{
-		if (!IsInbound(position))
-			throw new OutOfBoardPositionException();
-
-		if (playerColor == CardColor.red)
-		{
-			if (position.y != SIZE_Y - 1)
-				throw new CardNotCloseToWinningException();
-		}
-		else if (playerColor == CardColor.black)
-		{
-			if (position.y != 0)
-				throw new CardNotCloseToWinningException();
-		}
-
-		CardStack passingStack = FindCardStack(position);
-		return new ActionResolution
-		{
-			Color = passingStack.OwnerColor,
-			GameEndedResponse = passingStack.OwnerColor == playerColor ?
-						new GameEndedResponse
-						{
-							Way = GameEndedResponse.Reason.PASSING,
-							Result = playerColor
-						}
-						:
-						new GameEndedResponse
-						{
-							// TODO : is this a good method to change color? maybe generalize it
-							Way = GameEndedResponse.Reason.REPORT,
-							Result = (CardColor)(((int)playerColor + 1) % 2)
-						},
-			AllResponse = new ActionResponse
-			{
-				Type = "Passing",
-				Data = new Dictionary<string, object?> {
-					{ "color", passingStack.OwnerColor },
-					{ "from", position.ToString() },
-					{ "card", passingStack.Card.value }
-				}
-			}
-		};
-	}
-
-	public ActionResolution Attack(List<BoardPosition> from, BoardPosition to)
-	{
-		// Find all attacking card stacks
-		CardColor? actionColor = null;
-		List<CardStack> attackingCardStacks = new List<CardStack>();
-		foreach (BoardPosition fromPosition in from)
-		{
-			CardStack attackingStack = FindCardStack(fromPosition);
-
-			actionColor = actionColor == null
-				? attackingStack.OwnerColor
-				: actionColor != attackingStack.OwnerColor
-					? CardColor.both
-					: actionColor;
-
-			attackingCardStacks.Add(attackingStack);
-		}
-
-		// Defend attack
-		CardStack defendingStack = FindCardStack(to);
-		CardDefense defense = defendingStack.Defend(
-			attackingCardStacks.ConvertAll(
-				new Converter<CardStack, Card>(CardStack.ToCard)
-			),
-			from,
-			to
-		);
-
-		//Console.WriteLine(String.Format("Attack: {0}, {1}", defense.topCard.value, defense.result));
-
-		// Apply the defense result
-		bool switchCard = defense.TopCard != defendingStack.Card;
-
-		if (defense.Result == Result.draw)
-			_cards.Remove(to);
-
-		foreach (BoardPosition fromPosition in from)
-		{
-			if (defense.Result != Result.draw)
-			{
-				CardStack attackingStack = _cards[fromPosition];
-				if (switchCard && attackingStack.Card == defense.TopCard)
-				{
-					attackingStack.MergeUnder(defendingStack);
-					_cards.Remove(to);
-					_playerCardStackCount[(int)defendingStack.OwnerColor]--;
-					_cards.Add(to, attackingStack);
-					switchCard = false;
-
-				}
-				else
-				{
-					defendingStack.MergeUnder(attackingStack);
-					_playerCardStackCount[(int)attackingStack.OwnerColor]--;
-				}
-			}
-			_cards.Remove(fromPosition);
-		}
-
-		return new ActionResolution
-		{
-			Color = actionColor ?? CardColor.both,
-			GameEndedResponse = (_playerCardStackCount[0] > 0 && _playerCardStackCount[1] > 0) ?
-						null
-				:
-				(_playerCardStackCount[0] > 0) ?
-						new GameEndedResponse
-						{
-							Way = GameEndedResponse.Reason.MATERIAL,
-							Result = CardColor.red
-						}
-						:
-						_playerCardStackCount[1] > 0 ?
-								new GameEndedResponse
-								{
-									Way = GameEndedResponse.Reason.MATERIAL,
-									Result = CardColor.black
-								}
-								:
-								new GameEndedResponse
-								{
-									Way = GameEndedResponse.Reason.MATERIAL,
-									Result = CardColor.both
-								},
-			AllResponse = new ActionResponse
-			{
-				Type = "Attack",
-				Data = new Dictionary<string, object?>
-				{
-					{ "from", from },
-					{ "to", to },
-					{ "defense", defense },
-				}
-			}
-		};
-	}
-
-	public ActionResolution See(CardColor playerColor, BoardPosition from)
-	{
-		CardStack stack = FindCardStack(from);
-
-		if (!stack.IsHidden)
-			throw new CardNotHiddenException();
-
-		Card card = stack.Card;
-		CardColor cardColor = card.color;
-		int cardValue = card.value;
-
-		return new ActionResolution
-		{
-			Color = card.color,
-			OwnerResponse = new ActionResponse
-			{
-				Type = "See",
-				Data = new Dictionary<string, object?>
-				{
-					{ "player", playerColor },
-					{ "position", from.ToString() },
-					{ "card", card.State }
-				}
-			},
-			AllResponse = new ActionResponse
-			{
-				Type = "See",
-				Data = new Dictionary<string, object?>
-				{
-					{ "player", playerColor },
-					{ "position", from.ToString() }
-				}
-			},
-		};
-	}
-
-	private bool IsInbound(BoardPosition position) => position.x >= 0 && position.x < SIZE_X && position.y >= 0 && position.y < SIZE_Y;
-
-	private CardStack FindCardStack(BoardPosition at)
-	{
-		if (!_cards.ContainsKey(at))
+		if (!IsOccupied(at))
 			throw new NoCardFoundException();
 
 		return _cards[at];
+	}
+
+	public void AddCardStack(BoardPosition at, CardStack cardStack)
+	{
+		if (IsOccupied(at))
+			throw new PositionOccupiedException();
+
+		PlayerCardStackCount[(int)cardStack.OwnerColor]++;
+		_cards.Add(at, cardStack);
+	}
+
+	public CardStack RemoveCardStack(BoardPosition at)
+	{
+		if (!IsOccupied(at))
+			throw new NoCardFoundException();
+
+		PlayerCardStackCount[(int)FindCardStack(at).OwnerColor]--;
+		CardStack stack = FindCardStack(at);
+		_cards.Remove(at);
+		return stack;
 	}
 
 	// returns a dictionary of the board positions, and returns null if the stack is hidden
