@@ -53,6 +53,8 @@ public class AttackAction : Action
 		if (defense.Result == Result.draw)
 			board.RemoveCardStack(_to);
 
+		List<string> fromStringList = new();
+
 		foreach (BoardPosition fromPosition in _from)
 		{
 			if (defense.Result != Result.draw)
@@ -71,6 +73,7 @@ public class AttackAction : Action
 					defendingStack.MergeUnder(attackingStack);
 				}
 			}
+			fromStringList.Add(fromPosition.ToString());
 			board.RemoveCardStack(fromPosition);
 		}
 
@@ -104,8 +107,8 @@ public class AttackAction : Action
 				Type = "Attack",
 				Data = new Dictionary<string, object?>
 				{
-					{ "from", _from },
-					{ "to", _to },
+					{ "from", fromStringList },
+					{ "to", _to.ToString() },
 					{ "defense", defense },
 				}
 			}
